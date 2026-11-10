@@ -159,7 +159,7 @@ else:
                     pass
 
     # --- PESTAÑAS PRINCIPALES ---
-    menu_principal = st.tabs(["📦 Mi Inventario", "➕ Agregar", "✏️ Modificar", "💰 Vender", "📂 Subir Excel Externo", "🔍 Buscador Global", "🖨️ Ver Nota", "📋 Historial"])
+    menu_principal = st.tabs(["📦 Mi Inventario", "➕ Agregar", "✏️ Modificar", "💰 Vender", "📂 Subir Archivo Externo", "🔍 Buscador Global", "🖨️ Ver y Imprimir Nota", "📋 Historial"])
 
     # 1. MI INVENTARIO
     with menu_principal[0]:
@@ -306,32 +306,44 @@ else:
         else:
             st.info("No tienes stock disponible para realizar ventas.")
 
-    # 5. SUBIR EXCEL EXTERNO (NUEVO)
+    # 5. SUBIR ARCHIVO EXTERNO (EXCEL O PDF)
     with menu_principal[4]:
-        st.markdown("### 📂 Cargar Archivo Excel de Inventario Externo")
-        st.write("Sube cualquier archivo Excel (`.xlsx`) de un proveedor o externo. El programa lo leerá para que puedas buscar medidas ahí en la siguiente pestaña.")
+        st.markdown("### 📂 Cargar Archivo Externo (Excel o PDF)")
+        st.write("Sube un archivo en formato **Excel (.xlsx, .xls)** o **PDF** de un proveedor externo para consultarlo en el buscador.")
         
-        archivo_subido = st.file_uploader("Selecciona el archivo Excel externo", type=["xlsx", "xls"])
+        archivo_subido = st.file_uploader("Selecciona el archivo externo", type=["xlsx", "xls", "pdf"])
         if archivo_subido is not None:
             try:
-                st.session_state["df_externo"] = pd.read_excel(archivo_subido)
-                st.success("¡Archivo Excel externo cargado con éxito!")
+                if archivo_subido.name.endswith('.pdf'):
+                    # Lector básico de texto para PDF usando pandas/pypdf si está disponible, o aviso
+                    import pypdf
+                    reader = pypdf.PdfReader(archivo_subido)
+                    texto_pdf = ""
+                    for pagina in reader.pages:
+                        texto_pdf += pagina.extract_text() + "\n"
+                    # Convertir líneas del PDF en un DataFrame simple para búsqueda
+                    lineas = [linea.strip() for linea in texto_pdf.split("\n") if linea.strip()]
+                    st.session_state["df_externo"] = pd.DataFrame({"Texto / Contenido PDF": lineas})
+                    st.success("¡Archivo PDF externo leído con éxito!")
+                else:
+                    st.session_state["df_externo"] = pd.read_excel(archivo_subido)
+                    st.success("¡Archivo Excel externo cargado con éxito!")
             except Exception as e:
                 st.error(f"Error al leer el archivo: {e}")
                 
         if st.session_state["df_externo"] is not None:
-            st.markdown("#### Vista previa del inventario externo cargado:")
+            st.markdown("#### Vista previa del archivo externo cargado:")
             st.dataframe(st.session_state["df_externo"], use_container_width=True)
-            if st.button("🗑️ Borrar / Quitar Inventario Externo"):
+            if st.button("🗑️ Borrar / Quitar Archivo Externo"):
                 st.session_state["df_externo"] = None
                 st.rerun()
         else:
-            st.info("Aún no se ha cargado ningún archivo Excel externo.")
+            st.info("Aún no se ha cargado ningún archivo externo.")
 
-    # 6. BUSCADOR GLOBAL (MI INVENTARIO + EXCEL EXTERNO)
+    # 6. BUSCADOR GLOBAL (SOLO MUESTRA EXISTENCIA Y PRECIO)
     with menu_principal[5]:
         st.markdown("### 🔍 Buscador Global de Medidas de Llantas")
-        st.write("Escribe una medida (ej. 175/70R13) para buscarla simultáneamente en tu inventario y en el Excel externo que subiste.")
+        st.write("Escribe una medida para consultar de forma limpia **solo la existencia y el precio** disponible.")
         
         busqueda_medida = st.text_input("Escribe la medida a buscar:")
         
@@ -339,43 +351,47 @@ else:
             # 1. Buscar en inventario propio
             matches_propios = pd.DataFrame()
             if not df_inv.empty:
-                # Buscar columnas que parezcan medida o descripción
                 cols_str = df_inv.astype(str)
                 mask = cols_str.apply(lambda x: x.str.contains(busqueda_medida, case=False, na=False)).any(axis=1)
                 matches_propios = df_inv[mask].copy()
-                matches_propios["Origen"] = f"🏠 Mi Inventario ({usuario_actual})"
-            
-            # 2. Buscar en Excel externo cargado
+                if not matches_propios.empty:
+                    # Filtrar solo existencia (Cantidad) y Precio
+                    matches_propios = matches_propios[["Medida", "Descripción", "Cantidad", "Precio con IVA"]]
+                    matches_propios.rename(columns={"Precio con IVA": "Precio", "Cantidad": "Existencia"}, inplace=True)
+                    matches_propios.insert(0, "Origen", f"🏠 Mi Inventario ({usuario_actual})")
+
+            # 2. Buscar en archivo externo
             matches_externos = pd.DataFrame()
             if st.session_state["df_externo"] is not None:
                 df_ext = st.session_state["df_externo"]
                 cols_ext_str = df_ext.astype(str)
                 mask_ext = cols_ext_str.apply(lambda x: x.str.contains(busqueda_medida, case=False, na=False)).any(axis=1)
                 matches_externos = df_ext[mask_ext].copy()
-                matches_externos["Origen"] = "📂 Excel Externo Cargado"
-            
+                if not matches_externos.empty:
+                    matches_externos.insert(0, "Origen", "📂 Archivo Externo")
+
             st.markdown(f"#### Resultados para: *{busqueda_medida}*")
             
             if not matches_propios.empty or not matches_externos.empty:
                 if not matches_propios.empty:
-                    st.markdown("##### 🏠 Coincidencias en tu Inventario:")
-                    st.dataframe(matches_propios.drop(columns=["Usuario"]), use_container_width=True)
+                    st.markdown("##### 🏠 Opciones en tu Inventario:")
+                    st.dataframe(matches_propios, use_container_width=True)
                 
                 if not matches_externos.empty:
-                    st.markdown("##### 📂 Coincidencias en el Excel Externo:")
+                    st.markdown("##### 📂 Opciones en Archivo Externo:")
                     st.dataframe(matches_externos, use_container_width=True)
             else:
-                st.warning("No se encontraron coincidencias en ningún archivo.")
+                st.warning("No se encontraron coincidencias.")
         else:
             st.info("Ingresa una medida arriba para iniciar la búsqueda.")
 
-    # 7. VER NOTA / TICKET
+    # 7. VER Y IMPRIMIR NOTA (CON OPCIÓN DE GUARDAR E IMPRIMIR)
     with menu_principal[6]:
-        st.markdown("### 🖨️ Visualizar Nota de Venta")
+        st.markdown("### 🖨️ Generar, Guardar e Imprimir Nota de Venta")
         if not df_ventas.empty:
             indices_ventas = df_ventas.index.tolist()
             venta_seleccionada = st.selectbox(
-                "Selecciona la venta para ver su nota:", 
+                "Selecciona la venta:", 
                 indices_ventas, 
                 format_func=lambda x: f"Fecha: {df_ventas.loc[x, 'Fecha Venta']} | Cliente: {df_ventas.loc[x, 'Cliente']} | Total: ${df_ventas.loc[x, 'Total Pagado']}"
             )
@@ -383,6 +399,36 @@ else:
             v_data = df_ventas.loc[venta_seleccionada]
             st.markdown("---")
             
+            # Botones de acción rápida para Imprimir y Guardar
+            col_b1, col_b2, col_b3 = st.columns([1, 1, 1])
+            with col_b1:
+                if st.button("🖨️ Imprimir Ticket (Ctrl+P)", use_container_width=True):
+                    st.toast("Presiona Ctrl + P en tu teclado para enviar a la impresora.")
+            with col_b2:
+                # Botón para descargar como texto/recibo guardable
+                ticket_texto = f"""NOTA DE VENTA - {usuario_actual}
+Fecha: {v_data['Fecha Venta']}
+Cliente: {v_data['Cliente']}
+Tipo de Pago: {v_data['Tipo Pago']}
+----------------------------------------
+Medida: {v_data['Medida Llanta']}
+Descripción: {v_data['Descripción']}
+Cantidad: {v_data['Cantidad']}
+Precio Unitario: ${v_data['Precio Venta']:,.2f}
+----------------------------------------
+TOTAL: ${v_data['Total Pagado']:,.2f}
+¡Gracias por su preferencia!"""
+                st.download_button(
+                    label="💾 Guardar Nota (TXT)",
+                    data=ticket_texto,
+                    file_name=f"nota_{v_data['Cliente']}.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+            
+            st.write("")
+            
+            # Contenedor visual del Ticket
             col_ticket1, col_ticket2, col_ticket3 = st.columns([1, 2, 1])
             with col_ticket2:
                 ticket_container = st.container()
@@ -414,9 +460,6 @@ else:
                     st.markdown(f"<h3 style='text-align: right;'>Total: ${v_data['Total Pagado']:,.2f}</h3>", unsafe_allow_html=True)
                     st.markdown("<p style='text-align: center; font-size: 12px; color: gray;'>¡Gracias por su preferencia!</p>", unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
-            
-            st.write("")
-            st.info("💡 **Tip para imprimir:** Presiona las teclas **Ctrl + P** en tu teclado para mandar esta nota a tu impresora o guardarla como PDF.")
         else:
             st.info("No hay ventas registradas.")
 
@@ -433,7 +476,7 @@ else:
                 st.markdown("#### 💳 Marcar Crédito como Pagado")
                 creditos_pendientes_lista = df_ventas[(df_ventas["Tipo Pago"] == "Crédito") & (df_ventas["Estado Crédito"] == "Pendiente")]
                 if not creditos_pendientes_lista.empty:
-                    indices_pendientes = creditos_pendientes_lista.index.tolist()
+                    indices_pendientes = cred_pendientes_lista.index.tolist() if 'cred_pendientes_lista' in locals() else creditos_pendientes_lista.index.tolist()
                     venta_a_saldar = st.selectbox("Selecciona la venta a saldar", indices_pendientes, format_func=lambda x: f"{df_ventas.loc[x, 'Cliente']} - ${df_ventas.loc[x, 'Total Pagado']}")
                     if st.button("Marcar Crédito como Pagado"):
                         df_ventas_total.loc[venta_a_saldar, "Estado Crédito"] = "Pagado"
