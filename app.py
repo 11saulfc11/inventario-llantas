@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 USUARIOS_FILE = "usuarios.xlsx"
 INVENTARIO_FILE = "inventario_general.xlsx"
 VENTAS_FILE = "ventas_realizadas.xlsx"
+EXTERNOS_FILE = "inventarios_externos.xlsx"
 
 # ---------------------------------------------------------
 # FUNCIONES DE CARGA Y PERSISTENCIA EXCEL
@@ -52,6 +53,16 @@ def cargar_ventas():
 
 def guardar_venta(df):
     df.to_excel(VENTAS_FILE, index=False)
+
+def cargar_externos():
+    if not os.path.exists(EXTERNOS_FILE):
+        df = pd.DataFrame(columns=["Usuario", "Negocio / Proveedor Externo", "Medida", "Descripción", "Cantidad", "Precio"])
+        df.to_excel(EXTERNOS_FILE, index=False)
+        return df
+    return pd.read_excel(EXTERNOS_FILE)
+
+def guardar_externos(df):
+    df.to_excel(EXTERNOS_FILE, index=False)
 
 # ---------------------------------------------------------
 # CONFIGURACIÓN DE LA PÁGINA
@@ -116,7 +127,6 @@ else:
     logo_file = st.sidebar.file_uploader("🖼️ Sube tu Logotipo", type=["png", "jpg", "jpeg"])
     if logo_file is not None:
         st.sidebar.image(logo_file, use_container_width=True)
-        # Guardar logo en session_state para usarlo en la nota de venta
         st.session_state["logo_img"] = logo_file
     
     st.sidebar.markdown("---")
@@ -129,6 +139,7 @@ else:
     # Cargar datos globales y filtrar por usuario
     df_inv_total = cargar_inventario()
     df_ventas_total = cargar_ventas()
+    df_ext_total = cargar_externos()
 
     for col in ["Usuario", "Fecha Adquisición", "Medida", "Descripción", "Proveedor", "Cantidad", "Precio Unitario", "Precio con IVA"]:
         if col not in df_inv_total.columns:
@@ -138,8 +149,13 @@ else:
         if col not in df_ventas_total.columns:
             df_ventas_total[col] = ""
 
+    for col in ["Usuario", "Negocio / Proveedor Externo", "Medida", "Descripción", "Cantidad", "Precio"]:
+        if col not in df_ext_total.columns:
+            df_ext_total[col] = ""
+
     df_inv = df_inv_total[df_inv_total["Usuario"] == usuario_actual].copy()
     df_ventas = df_ventas_total[df_ventas_total["Usuario"] == usuario_actual].copy()
+    df_ext = df_ext_total[df_ext_total["Usuario"] == usuario_actual].copy()
 
     # --- ALERTAS DE CRÉDITO EN BARRA LATERAL ---
     if not df_ventas.empty:
@@ -158,9 +174,9 @@ else:
                     pass
 
     # --- PESTAÑAS PRINCIPALES ---
-    menu_principal = st.tabs(["📦 Mi Inventario", "➕ Agregar Llanta", "✏️ Modificar", "💰 Registrar Venta", "🖨️ Imprimir Nota", "📋 Historial"])
+    menu_principal = st.tabs(["📦 Mi Inventario", "➕ Agregar", "✏️ Modificar", "💰 Vender", "🌐 Inventarios Externos", "🔍 Buscador Global", "🖨️ Imprimir Nota", "📋 Historial"])
 
-    # 1. INVENTARIO PROPIO
+    # 1. MI INVENTARIO
     with menu_principal[0]:
         st.markdown("### 📋 Resumen de tu Inventario Actual")
         if not df_inv.empty:
@@ -168,11 +184,11 @@ else:
             total_modelos = len(df_inv)
             col_m1, col_m2 = st.columns(2)
             col_m1.metric("📦 Total de Llantas en Stock", total_llantas)
-            col_m2.metric("🏷️ Modelos / Medidas Registradas", total_modelos)
+            col_m2.metric("🏷️ Medidas Registradas", total_modelos)
             st.markdown("---")
             st.dataframe(df_inv.drop(columns=["Usuario"]), use_container_width=True)
         else:
-            st.info("Aún no tienes llantas registradas. Ve a la pestaña **Agregar Llanta** para empezar.")
+            st.info("Aún no tienes llantas registradas. Ve a la pestaña **Agregar** para empezar.")
 
     # 2. AGREGAR LLANTA
     with menu_principal[1]:
@@ -215,7 +231,7 @@ else:
     with menu_principal[2]:
         st.markdown("### ✏️ Modificar o Eliminar una Llanta")
         if not df_inv.empty:
-            medida_a_editar = st.selectbox("Selecciona la Medida / Llanta a gestionar", df_inv["Medida"].unique())
+            medida_a_editar = st.selectbox("Selecciona la Medida a gestionar", df_inv["Medida"].unique())
             prod_actual = df_inv[df_inv["Medida"] == medida_a_editar].iloc[0]
             
             with st.form("form_editar"):
@@ -305,9 +321,95 @@ else:
         else:
             st.info("No tienes stock disponible para realizar ventas.")
 
-    # 5. IMPRIMIR NOTA / TICKET CON LOGOTIPO
+    # 5. INVENTARIOS EXTERNOS (NUEVO)
     with menu_principal[4]:
-        st.markdown("### 🖨️ Generar Nota de Venta / Ticket Oficial")
+        st.markdown("### 🌐 Registrar Inventarios Externos / Otros Proveedores")
+        st.write("Agrega aquí las existencias y precios de otros negocios o proveedores externos para poder consultarlos y buscarlos rápidamente.")
+        
+        with st.form("form_externo", clear_on_submit=True):
+            col_ex1, col_ex2 = st.columns(2)
+            with col_ex1:
+                negocio_ext = st.text_input("🏭 Nombre del Proveedor / Taller Externo")
+                medida_ext = st.text_input("🛞 Medida de la Llanta (Ej. 185/65R15)")
+            with col_ex2:
+                desc_ext = st.text_input("📝 Descripción / Marca")
+                cant_ext = st.number_input("🔢 Cantidad Disponible", min_value=1, step=1)
+                precio_ext = st.number_input("💲 Precio Externo ($)", min_value=0.0, step=0.5, format="%.2f")
+                
+            btn_guardar_ext = st.form_submit_button("💾 Guardar Inventario Externo", use_container_width=True)
+            if btn_guardar_ext:
+                if not medida_ext or not negocio_ext:
+                    st.warning("El nombre del negocio y la medida son obligatorios.")
+                else:
+                    nuevo_ext = {
+                        "Usuario": usuario_actual,
+                        "Negocio / Proveedor Externo": negocio_ext,
+                        "Medida": medida_ext,
+                        "Descripción": desc_ext,
+                        "Cantidad": cant_ext,
+                        "Precio": precio_ext
+                    }
+                    df_ext_total = pd.concat([df_ext_total, pd.DataFrame([nuevo_ext])], ignore_index=True)
+                    guardar_externos(df_ext_total)
+                    st.success("¡Registro externo guardado con éxito!")
+        
+        st.markdown("---")
+        st.markdown("#### 📋 Listado de Inventarios Externos Registrados")
+        if not df_ext.empty:
+            st.dataframe(df_ext.drop(columns=["Usuario"]), use_container_width=True)
+            
+            # Opción para eliminar registro externo
+            ext_a_borrar = st.selectbox("Selecciona un registro externo para eliminar", df_ext.index.tolist(), format_func=lambda x: f"{df_ext.loc[x, 'Negocio / Proveedor Externo']} - {df_ext.loc[x, 'Medida']}")
+            if st.button("🗑️ Eliminar Registro Externo"):
+                df_ext_total = df_ext_total.drop(ext_a_borrar)
+                guardar_externos(df_ext_total)
+                st.warning("Registro externo eliminado.")
+                st.rerun()
+        else:
+            st.info("No hay inventarios externos registrados.")
+
+    # 6. BUSCADOR GLOBAL DE MEDIDAS (NUEVO)
+    with menu_principal[5]:
+        st.markdown("### 🔍 Buscador Global de Medidas de Llantas")
+        st.write("Busca una medida específica y el sistema te mostrará todas las opciones disponibles en tu propio inventario y en los inventarios externos.")
+        
+        busqueda_medida = st.text_input("Escribe la medida a buscar (ej. 175/70R13 o parte de ella):")
+        
+        if busqueda_medida:
+            # Buscar en inventario propio
+            matches_propios = pd.DataFrame()
+            if not df_inv.empty:
+                matches_propios = df_inv[df_inv["Medida"].str.contains(busqueda_medida, case=False, na=False)].copy()
+                matches_propios["Origen"] = f"🏠 Mi Inventario ({usuario_actual})"
+                matches_propios["Precio Disponible"] = matches_propios["Precio conIVA"] if "Precio conIVA" in matches_propios.columns else matches_propios["Precio con IVA"]
+            
+            # Buscar en inventarios externos
+            matches_externos = pd.DataFrame()
+            if not df_ext.empty:
+                matches_externos = df_ext[df_ext["Medida"].str.contains(busqueda_medida, case=False, na=False)].copy()
+                matches_externos["Origen"] = matches_externos["Negocio / Proveedor Externo"]
+                matches_externos["Precio Disponible"] = matches_externos["Precio"]
+            
+            st.markdown(f"#### Resultados para la medida: *{busqueda_medida}*")
+            
+            if not matches_propios.empty or not matches_externos.empty:
+                # Mostrar propios
+                if not matches_propios.empty:
+                    st.markdown("##### 🏠 Opciones en tu Inventario:")
+                    st.dataframe(matches_propios[["Medida", "Descripción", "Cantidad", "Precio con IVA", "Proveedor"]], use_container_width=True)
+                
+                # Mostrar externos
+                if not matches_externos.empty:
+                    st.markdown("##### 🌐 Opciones en Proveedores / Talleres Externos:")
+                    st.dataframe(matches_externos[["Negocio / Proveedor Externo", "Medida", "Descripción", "Cantidad", "Precio"]], use_container_width=True)
+            else:
+                st.warning("No se encontraron coincidencias para esa medida ni en tu inventario ni en los externos.")
+        else:
+            st.info("Escribe arriba una medida de llanta para realizar la búsqueda global.")
+
+    # 7. IMPRIMIR NOTA / TICKET (CORREGIDO CON BOTÓN DE IMPRESIÓN JS)
+    with menu_principal[6]:
+        st.markdown("### 🖨️ Generar y Mandar a Imprimir Nota de Venta")
         if not df_ventas.empty:
             indices_ventas = df_ventas.index.tolist()
             venta_seleccionada = st.selectbox(
@@ -320,14 +422,22 @@ else:
             
             st.markdown("---")
             
-            # Contenedor con diseño de Ticket / Nota Comercial
+            # Botón de impresión directa mediante JavaScript
+            st.markdown("""
+                <div style="text-align: center; margin-bottom: 20px;">
+                    <button onclick="window.print()" style="background-color: #2e7d32; color: white; padding: 12px 25px; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold;">
+                        🖨️ Imprimir Ticket / Nota Ahora
+                    </button>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Contenedor con diseño de Ticket Comercial
             col_ticket1, col_ticket2, col_ticket3 = st.columns([1, 2, 1])
             with col_ticket2:
                 ticket_container = st.container()
                 with ticket_container:
-                    st.markdown("<div style='border: 2px solid #ccc; padding: 20px; border-radius: 10px; background-color: white; color: black;'>", unsafe_allow_html=True)
+                    st.markdown("<div style='border: 2px solid #ccc; padding: 25px; border-radius: 10px; background-color: white; color: black; box-shadow: 0 4px 8px rgba(0,0,0,0.1);'>", unsafe_allow_html=True)
                     
-                    # Mostrar Logotipo si fue subido
                     if "logo_img" in st.session_state and st.session_state["logo_img"] is not None:
                         st.image(st.session_state["logo_img"], width=120)
                     
@@ -354,14 +464,11 @@ else:
                     st.markdown("<p style='text-align: center; font-size: 12px; color: gray;'>¡Gracias por su preferencia!</p>", unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
             
-            st.write("")
-            st.info("💡 **Cómo imprimir:** Presiona las teclas **Ctrl + P** en tu computadora (o usa el menú de compartir de tu celular) para imprimir esta nota directamente en papel o guardarla como PDF con tu logotipo.")
-            
         else:
             st.info("No hay ventas registradas para generar notas.")
 
-    # 6. HISTORIAL Y ADMINISTRACIÓN DE VENTAS
-    with menu_principal[5]:
+    # 8. HISTORIAL Y ADMINISTRACIÓN DE VENTAS
+    with menu_principal[7]:
         st.markdown("### 📋 Historial de Ventas, Créditos y Administración")
         if not df_ventas.empty:
             st.dataframe(df_ventas.drop(columns=["Usuario"]), use_container_width=True)
