@@ -116,6 +116,8 @@ else:
     logo_file = st.sidebar.file_uploader("🖼️ Sube tu Logotipo", type=["png", "jpg", "jpeg"])
     if logo_file is not None:
         st.sidebar.image(logo_file, use_container_width=True)
+        # Guardar logo en session_state para usarlo en la nota de venta
+        st.session_state["logo_img"] = logo_file
     
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"👤 **Usuario activo:** `{usuario_actual}`")
@@ -156,23 +158,21 @@ else:
                     pass
 
     # --- PESTAÑAS PRINCIPALES ---
-    menu_principal = st.tabs(["📦 Mi Inventario", "➕ Agregar Llanta", "✏️ Modificar Inventario", "💰 Registrar Venta", "📋 Historial y Créditos"])
+    menu_principal = st.tabs(["📦 Mi Inventario", "➕ Agregar Llanta", "✏️ Modificar", "💰 Registrar Venta", "🖨️ Imprimir Nota", "📋 Historial"])
 
     # 1. INVENTARIO PROPIO
     with menu_principal[0]:
         st.markdown("### 📋 Resumen de tu Inventario Actual")
         if not df_inv.empty:
-            # Tarjetas de Métricas Superiores para verse más atractivo
             total_llantas = int(df_inv["Cantidad"].sum())
             total_modelos = len(df_inv)
             col_m1, col_m2 = st.columns(2)
             col_m1.metric("📦 Total de Llantas en Stock", total_llantas)
             col_m2.metric("🏷️ Modelos / Medidas Registradas", total_modelos)
-            
             st.markdown("---")
             st.dataframe(df_inv.drop(columns=["Usuario"]), use_container_width=True)
         else:
-            st.info("Aún no tienes llantas registradas en tu inventario. Ve a la pestaña **Agregar Llanta** para empezar.")
+            st.info("Aún no tienes llantas registradas. Ve a la pestaña **Agregar Llanta** para empezar.")
 
     # 2. AGREGAR LLANTA
     with menu_principal[1]:
@@ -213,7 +213,7 @@ else:
 
     # 3. MODIFICAR INVENTARIO
     with menu_principal[2]:
-        st.markdown("### ✏️ Modificar o Eliminar una Llanta del Inventario")
+        st.markdown("### ✏️ Modificar o Eliminar una Llanta")
         if not df_inv.empty:
             medida_a_editar = st.selectbox("Selecciona la Medida / Llanta a gestionar", df_inv["Medida"].unique())
             prod_actual = df_inv[df_inv["Medida"] == medida_a_editar].iloc[0]
@@ -281,12 +281,10 @@ else:
                     elif cant_a_vender > stock_disponible:
                         st.error("No hay suficiente stock disponible para esta venta.")
                     else:
-                        # Descontar stock
                         stock_actual_real = int(df_inv_total.loc[(df_inv_total["Usuario"] == usuario_actual) & (df_inv_total["Medida"] == medida_venta), "Cantidad"].values[0])
                         df_inv_total.loc[(df_inv_total["Usuario"] == usuario_actual) & (df_inv_total["Medida"] == medida_venta), "Cantidad"] = stock_actual_real - cant_a_vender
                         guardar_inventario(df_inv_total)
                         
-                        # Registrar venta
                         nueva_venta = {
                             "Usuario": usuario_actual,
                             "Fecha Venta": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -307,8 +305,63 @@ else:
         else:
             st.info("No tienes stock disponible para realizar ventas.")
 
-    # 5. HISTORIAL DE VENTAS Y CRÉDITOS (CON OPCIÓN DE EDITAR / ELIMINAR)
+    # 5. IMPRIMIR NOTA / TICKET CON LOGOTIPO
     with menu_principal[4]:
+        st.markdown("### 🖨️ Generar Nota de Venta / Ticket Oficial")
+        if not df_ventas.empty:
+            indices_ventas = df_ventas.index.tolist()
+            venta_seleccionada = st.selectbox(
+                "Selecciona la venta para generar su nota:", 
+                indices_ventas, 
+                format_func=lambda x: f"Fecha: {df_ventas.loc[x, 'Fecha Venta']} | Cliente: {df_ventas.loc[x, 'Cliente']} | Total: ${df_ventas.loc[x, 'Total Pagado']}"
+            )
+            
+            v_data = df_ventas.loc[venta_seleccionada]
+            
+            st.markdown("---")
+            
+            # Contenedor con diseño de Ticket / Nota Comercial
+            col_ticket1, col_ticket2, col_ticket3 = st.columns([1, 2, 1])
+            with col_ticket2:
+                ticket_container = st.container()
+                with ticket_container:
+                    st.markdown("<div style='border: 2px solid #ccc; padding: 20px; border-radius: 10px; background-color: white; color: black;'>", unsafe_allow_html=True)
+                    
+                    # Mostrar Logotipo si fue subido
+                    if "logo_img" in st.session_state and st.session_state["logo_img"] is not None:
+                        st.image(st.session_state["logo_img"], width=120)
+                    
+                    st.markdown(f"<h3 style='text-align: center; margin: 0;'>NOTA DE VENTA</h3>", unsafe_allow_html=True)
+                    st.markdown(f"<p style='text-align: center; color: gray; margin: 0;'>Control de Llantas - Negocio: <b>{usuario_actual}</b></p>", unsafe_allow_html=True)
+                    st.markdown("---")
+                    
+                    st.write(f"📅 **Fecha:** {v_data['Fecha Venta']}")
+                    st.write(f"👤 **Cliente:** {v_data['Cliente']}")
+                    st.write(f"💳 **Tipo de Pago:** {v_data['Tipo Pago']}")
+                    if v_data['Tipo Pago'] == "Crédito":
+                        st.write(f"⏰ **Vencimiento Crédito:** {v_data['Fecha Vencimiento Crédito']}")
+                        st.write(f"📌 **Estado:** {v_data['Estado Crédito']}")
+                    
+                    st.markdown("---")
+                    st.markdown("#### Detalle del Producto:")
+                    st.write(f"• **Medida:** {v_data['Medida Llanta']}")
+                    st.write(f"• **Descripción:** {v_data['Descripción']}")
+                    st.write(f"• **Cantidad:** {v_data['Cantidad']} pieza(s)")
+                    st.write(f"• **Precio Unitario:** ${v_data['Precio Venta']:,.2f}")
+                    
+                    st.markdown("---")
+                    st.markdown(f"<h3 style='text-align: right;'>Total: ${v_data['Total Pagado']:,.2f}</h3>", unsafe_allow_html=True)
+                    st.markdown("<p style='text-align: center; font-size: 12px; color: gray;'>¡Gracias por su preferencia!</p>", unsafe_allow_html=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
+            
+            st.write("")
+            st.info("💡 **Cómo imprimir:** Presiona las teclas **Ctrl + P** en tu computadora (o usa el menú de compartir de tu celular) para imprimir esta nota directamente en papel o guardarla como PDF con tu logotipo.")
+            
+        else:
+            st.info("No hay ventas registradas para generar notas.")
+
+    # 6. HISTORIAL Y ADMINISTRACIÓN DE VENTAS
+    with menu_principal[5]:
         st.markdown("### 📋 Historial de Ventas, Créditos y Administración")
         if not df_ventas.empty:
             st.dataframe(df_ventas.drop(columns=["Usuario"]), use_container_width=True)
@@ -316,7 +369,6 @@ else:
             st.markdown("---")
             col_acc1, col_acc2 = st.columns(2)
             
-            # Sub-sección para saldar créditos
             with col_acc1:
                 st.markdown("#### 💳 Marcar Crédito como Pagado")
                 creditos_pendientes_lista = df_ventas[(df_ventas["Tipo Pago"] == "Crédito") & (df_ventas["Estado Crédito"] == "Pendiente")]
@@ -331,25 +383,21 @@ else:
                 else:
                     st.success("No hay créditos pendientes por cobrar 🎉")
 
-            # Sub-sección para eliminar ventas erróneas
             with col_acc2:
                 st.markdown("#### 🗑️ Eliminar Registro de Venta")
                 if not df_ventas.empty:
                     indices_usuario = df_ventas.index.tolist()
-                    venta_a_borrar = st.selectbox("Selecciona la venta a eliminar del historial", indices_usuario, format_func=lambda x: f"{df_ventas.loc[x, 'Fecha Venta']} - {df_ventas.loc[x, 'Cliente']} (${df_ventas.loc[x, 'Total Pagado']})")
+                    venta_a_borrar = st.selectbox("Selecciona la venta a eliminar", indices_usuario, format_func=lambda x: f"{df_ventas.loc[x, 'Fecha Venta']} - {df_ventas.loc[x, 'Cliente']} (${df_ventas.loc[x, 'Total Pagado']})")
                     if st.button("Eliminar Venta Seleccionada", type="primary"):
-                        # Opcional: devolver stock al inventario al borrar la venta
                         medida_v = df_ventas_total.loc[venta_a_borrar, "Medida Llanta"]
                         cant_v = int(df_ventas_total.loc[venta_a_borrar, "Cantidad"])
                         
-                        # Devolver al inventario de este usuario
                         filtro_inv = (df_inv_total["Usuario"] == usuario_actual) & (df_inv_total["Medida"] == medida_v)
                         if not df_inv_total[filtro_inv].empty:
                             stock_actual = int(df_inv_total.loc[filtro_inv, "Cantidad"].values[0])
                             df_inv_total.loc[filtro_inv, "Cantidad"] = stock_actual + cant_v
                             guardar_inventario(df_inv_total)
                         
-                        # Borrar la venta del registro total
                         df_ventas_total = df_ventas_total.drop(venta_a_borrar)
                         guardar_venta(df_ventas_total)
                         st.warning("Venta eliminada del historial y stock devuelto al inventario.")
