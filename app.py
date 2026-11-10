@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 USUARIOS_FILE = "usuarios.xlsx"
 INVENTARIO_FILE = "inventario_general.xlsx"
 VENTAS_FILE = "ventas_realizadas.xlsx"
-EXTERNOS_FILE = "inventarios_externos.xlsx"
 
 # ---------------------------------------------------------
 # FUNCIONES DE CARGA Y PERSISTENCIA EXCEL
@@ -54,16 +53,6 @@ def cargar_ventas():
 def guardar_venta(df):
     df.to_excel(VENTAS_FILE, index=False)
 
-def cargar_externos():
-    if not os.path.exists(EXTERNOS_FILE):
-        df = pd.DataFrame(columns=["Usuario", "Negocio / Proveedor Externo", "Medida", "Descripción", "Cantidad", "Precio"])
-        df.to_excel(EXTERNOS_FILE, index=False)
-        return df
-    return pd.read_excel(EXTERNOS_FILE)
-
-def guardar_externos(df):
-    df.to_excel(EXTERNOS_FILE, index=False)
-
 # ---------------------------------------------------------
 # CONFIGURACIÓN DE LA PÁGINA
 # ---------------------------------------------------------
@@ -73,6 +62,8 @@ if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
 if "usuario_actual" not in st.session_state:
     st.session_state["usuario_actual"] = ""
+if "df_externo" not in st.session_state:
+    st.session_state["df_externo"] = None
 
 # ---------------------------------------------------------
 # PANTALLA DE ACCESO (LOGIN / REGISTRO)
@@ -139,7 +130,6 @@ else:
     # Cargar datos globales y filtrar por usuario
     df_inv_total = cargar_inventario()
     df_ventas_total = cargar_ventas()
-    df_ext_total = cargar_externos()
 
     for col in ["Usuario", "Fecha Adquisición", "Medida", "Descripción", "Proveedor", "Cantidad", "Precio Unitario", "Precio con IVA"]:
         if col not in df_inv_total.columns:
@@ -149,13 +139,8 @@ else:
         if col not in df_ventas_total.columns:
             df_ventas_total[col] = ""
 
-    for col in ["Usuario", "Negocio / Proveedor Externo", "Medida", "Descripción", "Cantidad", "Precio"]:
-        if col not in df_ext_total.columns:
-            df_ext_total[col] = ""
-
     df_inv = df_inv_total[df_inv_total["Usuario"] == usuario_actual].copy()
     df_ventas = df_ventas_total[df_ventas_total["Usuario"] == usuario_actual].copy()
-    df_ext = df_ext_total[df_ext_total["Usuario"] == usuario_actual].copy()
 
     # --- ALERTAS DE CRÉDITO EN BARRA LATERAL ---
     if not df_ventas.empty:
@@ -174,7 +159,7 @@ else:
                     pass
 
     # --- PESTAÑAS PRINCIPALES ---
-    menu_principal = st.tabs(["📦 Mi Inventario", "➕ Agregar", "✏️ Modificar", "💰 Vender", "🌐 Inventarios Externos", "🔍 Buscador Global", "🖨️ Imprimir Nota", "📋 Historial"])
+    menu_principal = st.tabs(["📦 Mi Inventario", "➕ Agregar", "✏️ Modificar", "💰 Vender", "📂 Subir Excel Externo", "🔍 Buscador Global", "🖨️ Ver Nota", "📋 Historial"])
 
     # 1. MI INVENTARIO
     with menu_principal[0]:
@@ -321,117 +306,83 @@ else:
         else:
             st.info("No tienes stock disponible para realizar ventas.")
 
-    # 5. INVENTARIOS EXTERNOS (NUEVO)
+    # 5. SUBIR EXCEL EXTERNO (NUEVO)
     with menu_principal[4]:
-        st.markdown("### 🌐 Registrar Inventarios Externos / Otros Proveedores")
-        st.write("Agrega aquí las existencias y precios de otros negocios o proveedores externos para poder consultarlos y buscarlos rápidamente.")
+        st.markdown("### 📂 Cargar Archivo Excel de Inventario Externo")
+        st.write("Sube cualquier archivo Excel (`.xlsx`) de un proveedor o externo. El programa lo leerá para que puedas buscar medidas ahí en la siguiente pestaña.")
         
-        with st.form("form_externo", clear_on_submit=True):
-            col_ex1, col_ex2 = st.columns(2)
-            with col_ex1:
-                negocio_ext = st.text_input("🏭 Nombre del Proveedor / Taller Externo")
-                medida_ext = st.text_input("🛞 Medida de la Llanta (Ej. 185/65R15)")
-            with col_ex2:
-                desc_ext = st.text_input("📝 Descripción / Marca")
-                cant_ext = st.number_input("🔢 Cantidad Disponible", min_value=1, step=1)
-                precio_ext = st.number_input("💲 Precio Externo ($)", min_value=0.0, step=0.5, format="%.2f")
+        archivo_subido = st.file_uploader("Selecciona el archivo Excel externo", type=["xlsx", "xls"])
+        if archivo_subido is not None:
+            try:
+                st.session_state["df_externo"] = pd.read_excel(archivo_subido)
+                st.success("¡Archivo Excel externo cargado con éxito!")
+            except Exception as e:
+                st.error(f"Error al leer el archivo: {e}")
                 
-            btn_guardar_ext = st.form_submit_button("💾 Guardar Inventario Externo", use_container_width=True)
-            if btn_guardar_ext:
-                if not medida_ext or not negocio_ext:
-                    st.warning("El nombre del negocio y la medida son obligatorios.")
-                else:
-                    nuevo_ext = {
-                        "Usuario": usuario_actual,
-                        "Negocio / Proveedor Externo": negocio_ext,
-                        "Medida": medida_ext,
-                        "Descripción": desc_ext,
-                        "Cantidad": cant_ext,
-                        "Precio": precio_ext
-                    }
-                    df_ext_total = pd.concat([df_ext_total, pd.DataFrame([nuevo_ext])], ignore_index=True)
-                    guardar_externos(df_ext_total)
-                    st.success("¡Registro externo guardado con éxito!")
-        
-        st.markdown("---")
-        st.markdown("#### 📋 Listado de Inventarios Externos Registrados")
-        if not df_ext.empty:
-            st.dataframe(df_ext.drop(columns=["Usuario"]), use_container_width=True)
-            
-            # Opción para eliminar registro externo
-            ext_a_borrar = st.selectbox("Selecciona un registro externo para eliminar", df_ext.index.tolist(), format_func=lambda x: f"{df_ext.loc[x, 'Negocio / Proveedor Externo']} - {df_ext.loc[x, 'Medida']}")
-            if st.button("🗑️ Eliminar Registro Externo"):
-                df_ext_total = df_ext_total.drop(ext_a_borrar)
-                guardar_externos(df_ext_total)
-                st.warning("Registro externo eliminado.")
+        if st.session_state["df_externo"] is not None:
+            st.markdown("#### Vista previa del inventario externo cargado:")
+            st.dataframe(st.session_state["df_externo"], use_container_width=True)
+            if st.button("🗑️ Borrar / Quitar Inventario Externo"):
+                st.session_state["df_externo"] = None
                 st.rerun()
         else:
-            st.info("No hay inventarios externos registrados.")
+            st.info("Aún no se ha cargado ningún archivo Excel externo.")
 
-    # 6. BUSCADOR GLOBAL DE MEDIDAS (NUEVO)
+    # 6. BUSCADOR GLOBAL (MI INVENTARIO + EXCEL EXTERNO)
     with menu_principal[5]:
         st.markdown("### 🔍 Buscador Global de Medidas de Llantas")
-        st.write("Busca una medida específica y el sistema te mostrará todas las opciones disponibles en tu propio inventario y en los inventarios externos.")
+        st.write("Escribe una medida (ej. 175/70R13) para buscarla simultáneamente en tu inventario y en el Excel externo que subiste.")
         
-        busqueda_medida = st.text_input("Escribe la medida a buscar (ej. 175/70R13 o parte de ella):")
+        busqueda_medida = st.text_input("Escribe la medida a buscar:")
         
         if busqueda_medida:
-            # Buscar en inventario propio
+            # 1. Buscar en inventario propio
             matches_propios = pd.DataFrame()
             if not df_inv.empty:
-                matches_propios = df_inv[df_inv["Medida"].str.contains(busqueda_medida, case=False, na=False)].copy()
+                # Buscar columnas que parezcan medida o descripción
+                cols_str = df_inv.astype(str)
+                mask = cols_str.apply(lambda x: x.str.contains(busqueda_medida, case=False, na=False)).any(axis=1)
+                matches_propios = df_inv[mask].copy()
                 matches_propios["Origen"] = f"🏠 Mi Inventario ({usuario_actual})"
-                matches_propios["Precio Disponible"] = matches_propios["Precio conIVA"] if "Precio conIVA" in matches_propios.columns else matches_propios["Precio con IVA"]
             
-            # Buscar en inventarios externos
+            # 2. Buscar en Excel externo cargado
             matches_externos = pd.DataFrame()
-            if not df_ext.empty:
-                matches_externos = df_ext[df_ext["Medida"].str.contains(busqueda_medida, case=False, na=False)].copy()
-                matches_externos["Origen"] = matches_externos["Negocio / Proveedor Externo"]
-                matches_externos["Precio Disponible"] = matches_externos["Precio"]
+            if st.session_state["df_externo"] is not None:
+                df_ext = st.session_state["df_externo"]
+                cols_ext_str = df_ext.astype(str)
+                mask_ext = cols_ext_str.apply(lambda x: x.str.contains(busqueda_medida, case=False, na=False)).any(axis=1)
+                matches_externos = df_ext[mask_ext].copy()
+                matches_externos["Origen"] = "📂 Excel Externo Cargado"
             
-            st.markdown(f"#### Resultados para la medida: *{busqueda_medida}*")
+            st.markdown(f"#### Resultados para: *{busqueda_medida}*")
             
             if not matches_propios.empty or not matches_externos.empty:
-                # Mostrar propios
                 if not matches_propios.empty:
-                    st.markdown("##### 🏠 Opciones en tu Inventario:")
-                    st.dataframe(matches_propios[["Medida", "Descripción", "Cantidad", "Precio con IVA", "Proveedor"]], use_container_width=True)
+                    st.markdown("##### 🏠 Coincidencias en tu Inventario:")
+                    st.dataframe(matches_propios.drop(columns=["Usuario"]), use_container_width=True)
                 
-                # Mostrar externos
                 if not matches_externos.empty:
-                    st.markdown("##### 🌐 Opciones en Proveedores / Talleres Externos:")
-                    st.dataframe(matches_externos[["Negocio / Proveedor Externo", "Medida", "Descripción", "Cantidad", "Precio"]], use_container_width=True)
+                    st.markdown("##### 📂 Coincidencias en el Excel Externo:")
+                    st.dataframe(matches_externos, use_container_width=True)
             else:
-                st.warning("No se encontraron coincidencias para esa medida ni en tu inventario ni en los externos.")
+                st.warning("No se encontraron coincidencias en ningún archivo.")
         else:
-            st.info("Escribe arriba una medida de llanta para realizar la búsqueda global.")
+            st.info("Ingresa una medida arriba para iniciar la búsqueda.")
 
-    # 7. IMPRIMIR NOTA / TICKET (CORREGIDO CON BOTÓN DE IMPRESIÓN JS)
+    # 7. VER NOTA / TICKET
     with menu_principal[6]:
-        st.markdown("### 🖨️ Generar y Mandar a Imprimir Nota de Venta")
+        st.markdown("### 🖨️ Visualizar Nota de Venta")
         if not df_ventas.empty:
             indices_ventas = df_ventas.index.tolist()
             venta_seleccionada = st.selectbox(
-                "Selecciona la venta para generar su nota:", 
+                "Selecciona la venta para ver su nota:", 
                 indices_ventas, 
                 format_func=lambda x: f"Fecha: {df_ventas.loc[x, 'Fecha Venta']} | Cliente: {df_ventas.loc[x, 'Cliente']} | Total: ${df_ventas.loc[x, 'Total Pagado']}"
             )
             
             v_data = df_ventas.loc[venta_seleccionada]
-            
             st.markdown("---")
             
-            # Botón de impresión directa mediante JavaScript
-            st.markdown("""
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <button onclick="window.print()" style="background-color: #2e7d32; color: white; padding: 12px 25px; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold;">
-                        🖨️ Imprimir Ticket / Nota Ahora
-                    </button>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            # Contenedor con diseño de Ticket Comercial
             col_ticket1, col_ticket2, col_ticket3 = st.columns([1, 2, 1])
             with col_ticket2:
                 ticket_container = st.container()
@@ -464,8 +415,10 @@ else:
                     st.markdown("<p style='text-align: center; font-size: 12px; color: gray;'>¡Gracias por su preferencia!</p>", unsafe_allow_html=True)
                     st.markdown("</div>", unsafe_allow_html=True)
             
+            st.write("")
+            st.info("💡 **Tip para imprimir:** Presiona las teclas **Ctrl + P** en tu teclado para mandar esta nota a tu impresora o guardarla como PDF.")
         else:
-            st.info("No hay ventas registradas para generar notas.")
+            st.info("No hay ventas registradas.")
 
     # 8. HISTORIAL Y ADMINISTRACIÓN DE VENTAS
     with menu_principal[7]:
