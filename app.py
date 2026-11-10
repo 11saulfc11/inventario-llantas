@@ -9,7 +9,7 @@ INVENTARIO_FILE = "inventario_general.xlsx"
 VENTAS_FILE = "ventas_realizadas.xlsx"
 
 # ---------------------------------------------------------
-# FUNCIONES DE CARGA Y PERSISTENCIA EXCEL (AISLADO POR USUARIO)
+# FUNCIONES DE CARGA Y PERSISTENCIA EXCEL
 # ---------------------------------------------------------
 def cargar_usuarios():
     if not os.path.exists(USUARIOS_FILE):
@@ -56,7 +56,7 @@ def guardar_venta(df):
 # ---------------------------------------------------------
 # CONFIGURACIÓN DE LA PÁGINA
 # ---------------------------------------------------------
-st.set_page_config(page_title="Control de Inventario de Llantas", layout="wide")
+st.set_page_config(page_title="Control de Inventario de Llantas", page_icon="🛞", layout="wide")
 
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
@@ -67,40 +67,43 @@ if "usuario_actual" not in st.session_state:
 # PANTALLA DE ACCESO (LOGIN / REGISTRO)
 # ---------------------------------------------------------
 if not st.session_state["autenticado"]:
-    st.title("🔑 Sistema de Acceso - Control de Llantas")
-    
-    tab_login, tab_registro = st.tabs(["Iniciar Sesión", "Registrarse"])
-    
-    with tab_login:
-        st.subheader("Ingresar a tu Cuenta")
-        user_input = st.text_input("Usuario", key="login_user")
-        pass_input = st.text_input("Contraseña", type="password", key="login_pass")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("<h1 style='text-align: center;'>🛞 Control de Llantas</h1>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; color: gray;'>Sistema de Gestión Privado</h3>", unsafe_allow_html=True)
         
-        if st.button("Iniciar Sesión"):
-            if validar_login(user_input, pass_input):
-                st.session_state["autenticado"] = True
-                st.session_state["usuario_actual"] = user_input
-                st.success(f"¡Bienvenido, {user_input}!")
-                st.rerun()
-            else:
-                st.error("Usuario o contraseña incorrectos.")
-                
-    with tab_registro:
-        st.subheader("Crear Cuenta Nueva (Control Privado)")
-        new_user = st.text_input("Nuevo Usuario", key="reg_user")
-        new_pass = st.text_input("Nueva Contraseña", type="password", key="reg_pass")
-        confirm_pass = st.text_input("Confirmar Contraseña", type="password", key="reg_confirm_pass")
+        tab_login, tab_registro = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse"])
         
-        if st.button("Crear Cuenta"):
-            if not new_user or not new_pass:
-                st.warning("Por favor completa todos los campos.")
-            elif new_pass != confirm_pass:
-                st.error("Las contraseñas no coinciden.")
-            else:
-                if registrar_usuario(new_user, new_pass):
-                    st.success("¡Cuenta creada con éxito! Ya puedes iniciar sesión en tu propio panel.")
+        with tab_login:
+            st.write("")
+            user_input = st.text_input("Usuario", key="login_user")
+            pass_input = st.text_input("Contraseña", type="password", key="login_pass")
+            st.write("")
+            if st.button("Ingresar al Sistema", use_container_width=True):
+                if validar_login(user_input, pass_input):
+                    st.session_state["autenticado"] = True
+                    st.session_state["usuario_actual"] = user_input
+                    st.success(f"¡Bienvenido, {user_input}!")
+                    st.rerun()
                 else:
-                    st.error("El nombre de usuario ya existe. Elige otro.")
+                    st.error("Usuario o contraseña incorrectos.")
+                    
+        with tab_registro:
+            st.write("")
+            new_user = st.text_input("Nuevo Usuario", key="reg_user")
+            new_pass = st.text_input("Nueva Contraseña", type="password", key="reg_pass")
+            confirm_pass = st.text_input("Confirmar Contraseña", type="password", key="reg_confirm_pass")
+            st.write("")
+            if st.button("Crear Cuenta", use_container_width=True):
+                if not new_user or not new_pass:
+                    st.warning("Por favor completa todos los campos.")
+                elif new_pass != confirm_pass:
+                    st.error("Las contraseñas no coinciden.")
+                else:
+                    if registrar_usuario(new_user, new_pass):
+                        st.success("¡Cuenta creada con éxito! Ya puedes iniciar sesión.")
+                    else:
+                        st.error("El nombre de usuario ya existe.")
 
 # ---------------------------------------------------------
 # APLICACIÓN PRINCIPAL (PRIVADA POR USUARIO)
@@ -108,37 +111,35 @@ if not st.session_state["autenticado"]:
 else:
     usuario_actual = st.session_state["usuario_actual"]
     
-    # --- BARRA LATERAL ---
-    st.sidebar.title("🛞 Control de Llantas")
-    st.sidebar.markdown("### Logotipo del Negocio")
-    logo_file = st.sidebar.file_uploader("Sube tu logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
+    # --- BARRA LATERAL ESTILIZADA ---
+    st.sidebar.markdown(f"## 🛞 Menú Principal")
+    logo_file = st.sidebar.file_uploader("🖼️ Sube tu Logotipo", type=["png", "jpg", "jpeg"])
     if logo_file is not None:
         st.sidebar.image(logo_file, use_container_width=True)
     
     st.sidebar.markdown("---")
-    st.sidebar.write(f"👤 **Usuario:** {usuario_actual}")
-    if st.sidebar.button("Cerrar Sesión"):
+    st.sidebar.markdown(f"👤 **Usuario activo:** `{usuario_actual}`")
+    if st.sidebar.button("🚪 Cerrar Sesión", use_container_width=True):
         st.session_state["autenticado"] = False
         st.session_state["usuario_actual"] = ""
         st.rerun()
 
-    # Cargar datos globales y filtrar estrictamente por el usuario conectado
+    # Cargar datos globales y filtrar por usuario
     df_inv_total = cargar_inventario()
     df_ventas_total = cargar_ventas()
 
-    # Asegurar columnas mínimas si faltan en archivos previos
-    for col in ["Usuario", "Fecha Adquisición", "Medida", "Proveedor"]:
+    for col in ["Usuario", "Fecha Adquisición", "Medida", "Descripción", "Proveedor", "Cantidad", "Precio Unitario", "Precio con IVA"]:
         if col not in df_inv_total.columns:
             df_inv_total[col] = ""
             
-    for col in ["Usuario", "Fecha Venta", "Tipo Pago", "Fecha Vencimiento Crédito", "Estado Crédito"]:
+    for col in ["Usuario", "Fecha Venta", "Cliente", "Medida Llanta", "Descripción", "Cantidad", "Precio Venta", "Total Pagado", "Tipo Pago", "Fecha Vencimiento Crédito", "Estado Crédito"]:
         if col not in df_ventas_total.columns:
             df_ventas_total[col] = ""
 
     df_inv = df_inv_total[df_inv_total["Usuario"] == usuario_actual].copy()
     df_ventas = df_ventas_total[df_ventas_total["Usuario"] == usuario_actual].copy()
 
-    # --- ALERTAS DE CRÉDITO PRÓXIMO A VENCER ---
+    # --- ALERTAS DE CRÉDITO EN BARRA LATERAL ---
     if not df_ventas.empty:
         hoy = datetime.now().date()
         creditos_pendientes = df_ventas[(df_ventas["Tipo Pago"] == "Crédito") & (df_ventas["Estado Crédito"] == "Pendiente")]
@@ -148,39 +149,48 @@ else:
                     f_venc = datetime.strptime(str(row["Fecha Vencimiento Crédito"])[:10], "%Y-%m-%d").date()
                     dias_restantes = (f_venc - hoy).days
                     if dias_restantes < 0:
-                        st.sidebar.error(f"⚠️ Crédito vencido: {row['Cliente']} (${row['Total Pagado']})")
+                        st.sidebar.error(f"⚠️ **Crédito Vencido**: {row['Cliente']} (${row['Total Pagado']})")
                     elif dias_restantes <= 3:
-                        st.sidebar.warning(f"⏰ Crédito vence en {dias_restantes} días: {row['Cliente']}")
+                        st.sidebar.warning(f"⏰ **Vence en {dias_restantes}d**: {row['Cliente']}")
                 except:
                     pass
 
     # --- PESTAÑAS PRINCIPALES ---
-    menu_principal = st.tabs(["📦 Mi Inventario", "➕ Agregar Llanta", "✏️ Modificar Inventario", "💰 Registrar Venta", "📋 Historial de Ventas"])
+    menu_principal = st.tabs(["📦 Mi Inventario", "➕ Agregar Llanta", "✏️ Modificar Inventario", "💰 Registrar Venta", "📋 Historial y Créditos"])
 
     # 1. INVENTARIO PROPIO
     with menu_principal[0]:
-        st.subheader(f"📋 Inventario de Llantas - {usuario_actual}")
+        st.markdown("### 📋 Resumen de tu Inventario Actual")
         if not df_inv.empty:
+            # Tarjetas de Métricas Superiores para verse más atractivo
+            total_llantas = int(df_inv["Cantidad"].sum())
+            total_modelos = len(df_inv)
+            col_m1, col_m2 = st.columns(2)
+            col_m1.metric("📦 Total de Llantas en Stock", total_llantas)
+            col_m2.metric("🏷️ Modelos / Medidas Registradas", total_modelos)
+            
+            st.markdown("---")
             st.dataframe(df_inv.drop(columns=["Usuario"]), use_container_width=True)
         else:
-            st.info("Aún no tienes llantas registradas en tu inventario.")
+            st.info("Aún no tienes llantas registradas en tu inventario. Ve a la pestaña **Agregar Llanta** para empezar.")
 
     # 2. AGREGAR LLANTA
     with menu_principal[1]:
-        st.subheader("➕ Agregar Nueva Llanta")
-        with st.form("form_agregar"):
+        st.markdown("### ➕ Registrar Nueva Entrada de Llantas")
+        with st.form("form_agregar", clear_on_submit=True):
             col1, col2 = st.columns(2)
             with col1:
-                fecha_adq = st.date_input("Fecha de Adquisición", value=datetime.now())
-                medida = st.text_input("Medida de la Llanta (Ej. 175/70R13)")
-                descripcion = st.text_input("Descripción (Marca / Modelo)")
+                fecha_adq = st.date_input("📅 Fecha de Adquisición", value=datetime.now())
+                medida = st.text_input("🛞 Medida de la Llanta (Ej. 175/70R13)")
+                descripcion = st.text_input("📝 Descripción (Marca / Modelo)")
             with col2:
-                proveedor = st.text_input("Proveedor (¿Quién la trajo?)")
-                cantidad = st.number_input("Cantidad en Existencia", min_value=1, step=1)
-                precio_u = st.number_input("Precio Unitario ($)", min_value=0.0, step=0.5, format="%.2f")
-                calcular_iva = st.checkbox("Incluir IVA (16%)", value=True)
+                proveedor = st.text_input("🏭 Proveedor (¿Quién la trajo?)")
+                cantidad = st.number_input("🔢 Cantidad en Existencia", min_value=1, step=1)
+                precio_u = st.number_input("💲 Precio Unitario Base ($)", min_value=0.0, step=0.5, format="%.2f")
+                calcular_iva = st.checkbox("Incluir IVA Automático (16%)", value=True)
                 
-            btn_guardar = st.form_submit_button("Guardar en mi Inventario")
+            st.write("")
+            btn_guardar = st.form_submit_button("💾 Guardar en mi Inventario", use_container_width=True)
             
             if btn_guardar:
                 if not medida:
@@ -200,13 +210,12 @@ else:
                     df_inv_total = pd.concat([df_inv_total, pd.DataFrame([nuevo_item])], ignore_index=True)
                     guardar_inventario(df_inv_total)
                     st.success("¡Llanta agregada correctamente a tu inventario!")
-                    st.rerun()
 
     # 3. MODIFICAR INVENTARIO
     with menu_principal[2]:
-        st.subheader("✏️ Modificar o Eliminar Llanta")
+        st.markdown("### ✏️ Modificar o Eliminar una Llanta del Inventario")
         if not df_inv.empty:
-            medida_a_editar = st.selectbox("Selecciona la Medida / Llanta a modificar", df_inv["Medida"].unique())
+            medida_a_editar = st.selectbox("Selecciona la Medida / Llanta a gestionar", df_inv["Medida"].unique())
             prod_actual = df_inv[df_inv["Medida"] == medida_a_editar].iloc[0]
             
             with st.form("form_editar"):
@@ -217,9 +226,9 @@ else:
                 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
-                    btn_actualizar = st.form_submit_button("Actualizar Datos")
+                    btn_actualizar = st.form_submit_button("🔄 Actualizar Datos", use_container_width=True)
                 with col_btn2:
-                    btn_eliminar = st.form_submit_button("🗑️ Eliminar Llanta")
+                    btn_eliminar = st.form_submit_button("🗑️ Eliminar Llanta", use_container_width=True)
                 
                 if btn_actualizar:
                     df_inv_total.loc[(df_inv_total["Usuario"] == usuario_actual) & (df_inv_total["Medida"] == medida_a_editar), "Descripción"] = nueva_desc
@@ -242,17 +251,17 @@ else:
 
     # 4. REGISTRAR VENTA
     with menu_principal[3]:
-        st.subheader("💰 Registrar Venta a Cliente")
+        st.markdown("### 💰 Registrar Venta o Salida de Producto")
         if not df_inv.empty:
-            with st.form("form_venta"):
-                cliente = st.text_input("Nombre del Cliente")
-                medida_venta = st.selectbox("Selecciona la Medida de la Llanta", df_inv["Medida"].unique())
+            with st.form("form_venta", clear_on_submit=True):
+                cliente = st.text_input("👤 Nombre del Cliente")
+                medida_venta = st.selectbox("🛞 Selecciona la Medida de la Llanta", df_inv["Medida"].unique())
                 
                 stock_disponible = int(df_inv.loc[df_inv["Medida"] == medida_venta, "Cantidad"].values[0])
                 precio_sugerido = float(df_inv.loc[df_inv["Medida"] == medida_venta, "Precio con IVA"].values[0])
                 desc_venta = str(df_inv.loc[df_inv["Medida"] == medida_venta, "Descripción"].values[0])
                 
-                st.write(f"Stock disponible: **{stock_disponible}** | Precio sugerido con IVA: **${precio_sugerido:.2f}**")
+                st.info(f"Stock disponible: **{stock_disponible} unidades** | Precio sugerido con IVA: **${precio_sugerido:.2f}**")
                 
                 cant_a_vender = st.number_input("Cantidad a vender", min_value=1, max_value=max(1, stock_disponible), step=1)
                 precio_personalizado = st.number_input("Precio de venta unitario ($)", min_value=0.0, value=precio_sugerido, step=0.5, format="%.2f")
@@ -261,17 +270,18 @@ else:
                 
                 fecha_vencimiento = ""
                 if tipo_pago == "Crédito":
-                    fecha_vencimiento = st.date_input("Fecha límite de pago (Vencimiento del crédito)", value=datetime.now() + timedelta(days=30))
+                    fecha_vencimiento = st.date_input("📅 Fecha límite de pago (Vencimiento del Crédito)", value=datetime.now() + timedelta(days=30))
                 
-                btn_registrar_venta = st.form_submit_button("Confirmar y Registrar Venta")
+                st.write("")
+                btn_registrar_venta = st.form_submit_button("🚀 Confirmar y Registrar Venta", use_container_width=True)
                 
                 if btn_registrar_venta:
                     if not cliente:
                         st.warning("Debes escribir el nombre del cliente.")
                     elif cant_a_vender > stock_disponible:
-                        st.error("No hay suficiente stock disponible.")
+                        st.error("No hay suficiente stock disponible para esta venta.")
                     else:
-                        # Descontar stock del usuario actual
+                        # Descontar stock
                         stock_actual_real = int(df_inv_total.loc[(df_inv_total["Usuario"] == usuario_actual) & (df_inv_total["Medida"] == medida_venta), "Cantidad"].values[0])
                         df_inv_total.loc[(df_inv_total["Usuario"] == usuario_actual) & (df_inv_total["Medida"] == medida_venta), "Cantidad"] = stock_actual_real - cant_a_vender
                         guardar_inventario(df_inv_total)
@@ -294,25 +304,55 @@ else:
                         guardar_venta(df_ventas_total)
                         
                         st.success(f"¡Venta registrada con éxito a {cliente}!")
-                        st.rerun()
         else:
             st.info("No tienes stock disponible para realizar ventas.")
 
-    # 5. HISTORIAL DE VENTAS Y ESTADOS DE CRÉDITO
+    # 5. HISTORIAL DE VENTAS Y CRÉDITOS (CON OPCIÓN DE EDITAR / ELIMINAR)
     with menu_principal[4]:
-        st.subheader("📋 Historial de Ventas y Créditos")
+        st.markdown("### 📋 Historial de Ventas, Créditos y Administración")
         if not df_ventas.empty:
             st.dataframe(df_ventas.drop(columns=["Usuario"]), use_container_width=True)
             
-            # Opción para marcar crédito como pagado
-            creditos_pendientes_lista = df_ventas[(df_ventas["Tipo Pago"] == "Crédito") & (df_ventas["Estado Crédito"] == "Pendiente")]
-            if not creditos_pendientes_lista.empty:
-                st.markdown("### 💳 Marcar Crédito como Pagado")
-                venta_a_saldar = st.selectbox("Selecciona la venta pendiente de pago", creditos_pendientes_lista.index)
-                if st.button("Marcar como Pagado"):
-                    df_ventas_total.loc[venta_a_saldar, "Estado Crédito"] = "Pagado"
-                    guardar_venta(df_ventas_total)
-                    st.success("¡El crédito ha sido actualizado a Pagado!")
-                    st.rerun()
+            st.markdown("---")
+            col_acc1, col_acc2 = st.columns(2)
+            
+            # Sub-sección para saldar créditos
+            with col_acc1:
+                st.markdown("#### 💳 Marcar Crédito como Pagado")
+                creditos_pendientes_lista = df_ventas[(df_ventas["Tipo Pago"] == "Crédito") & (df_ventas["Estado Crédito"] == "Pendiente")]
+                if not creditos_pendientes_lista.empty:
+                    indices_pendientes = creditos_pendientes_lista.index.tolist()
+                    venta_a_saldar = st.selectbox("Selecciona la venta a saldar", indices_pendientes, format_func=lambda x: f"{df_ventas.loc[x, 'Cliente']} - ${df_ventas.loc[x, 'Total Pagado']}")
+                    if st.button("Marcar Crédito como Pagado"):
+                        df_ventas_total.loc[venta_a_saldar, "Estado Crédito"] = "Pagado"
+                        guardar_venta(df_ventas_total)
+                        st.success("¡El crédito ha sido marcado como Pagado!")
+                        st.rerun()
+                else:
+                    st.success("No hay créditos pendientes por cobrar 🎉")
+
+            # Sub-sección para eliminar ventas erróneas
+            with col_acc2:
+                st.markdown("#### 🗑️ Eliminar Registro de Venta")
+                if not df_ventas.empty:
+                    indices_usuario = df_ventas.index.tolist()
+                    venta_a_borrar = st.selectbox("Selecciona la venta a eliminar del historial", indices_usuario, format_func=lambda x: f"{df_ventas.loc[x, 'Fecha Venta']} - {df_ventas.loc[x, 'Cliente']} (${df_ventas.loc[x, 'Total Pagado']})")
+                    if st.button("Eliminar Venta Seleccionada", type="primary"):
+                        # Opcional: devolver stock al inventario al borrar la venta
+                        medida_v = df_ventas_total.loc[venta_a_borrar, "Medida Llanta"]
+                        cant_v = int(df_ventas_total.loc[venta_a_borrar, "Cantidad"])
+                        
+                        # Devolver al inventario de este usuario
+                        filtro_inv = (df_inv_total["Usuario"] == usuario_actual) & (df_inv_total["Medida"] == medida_v)
+                        if not df_inv_total[filtro_inv].empty:
+                            stock_actual = int(df_inv_total.loc[filtro_inv, "Cantidad"].values[0])
+                            df_inv_total.loc[filtro_inv, "Cantidad"] = stock_actual + cant_v
+                            guardar_inventario(df_inv_total)
+                        
+                        # Borrar la venta del registro total
+                        df_ventas_total = df_ventas_total.drop(venta_a_borrar)
+                        guardar_venta(df_ventas_total)
+                        st.warning("Venta eliminada del historial y stock devuelto al inventario.")
+                        st.rerun()
         else:
             st.info("Aún no tienes ventas registradas.")
